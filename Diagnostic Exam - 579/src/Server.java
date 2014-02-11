@@ -1,6 +1,7 @@
 
-import java.awt.Color;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -12,6 +13,12 @@ import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartUtilities;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 
 public class Server implements Runnable{
 
@@ -28,18 +35,19 @@ public class Server implements Runnable{
   private ServerSocket serverSocket;
   
   public void run() {
-    String line = null;
     List<String> dataLineSet;
     
       try {
               if (SERVERIP != null) {
                   serverSocket = new ServerSocket(SERVERPORT);
+                  System.out.println("Server is Listening on port : " + SERVERPORT);
                   while (true) {
                       // LISTEN FOR INCOMING CLIENTS
                       Socket client = serverSocket.accept();
                       
                       try {
                           BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                          String line = null;
                           
                           while ((line = in.readLine()) != null) {
                               System.out.println(line);
@@ -47,6 +55,9 @@ public class Server implements Runnable{
                               
                               if(dataLineSet.get(0).equals("ACCELO:")){
                                 System.out.println("ACCELO Entry");
+                                System.out.println(dataLineSet.get(2));
+                                System.out.println(dataLineSet.get(4));
+                                System.out.println(dataLineSet.get(6));
                                 Long ts = Long.parseLong(dataLineSet.get(2));
                                 Double x = Double.parseDouble(dataLineSet.get(4));
                                 Double y = Double.parseDouble(dataLineSet.get(6));
@@ -79,15 +90,43 @@ public class Server implements Runnable{
               e.printStackTrace();
           }
       
+      //openChart();
       
-      }
+    }
 
   private void openChart() {
     if (accelData != null || accelData.size() > 0) {
         long t = accelData.get(0).getTimestamp();
+        XYSeries series1 = new XYSeries("XYGraph");
+        int i=0;
+        for(i=0;i<accelData.size();i++){
+          
+          long time = accelData.get(i).getTimestamp();
+          double x = accelData.get(i).getX();
+          series1.add(time-t, x);
+        }
+        
+        XYSeriesCollection dataset1 = new XYSeriesCollection();
+        dataset1.addSeries(series1);
+        
+        JFreeChart chart = ChartFactory.createXYLineChart(
+            "X Axis Accelo vs. Time",
+            "Time",
+            "Movement in X Axis",
+            dataset1,
+            PlotOrientation.VERTICAL,  // Plot Orientation
+            true,                      // Show Legend
+            true,                      // Use tooltips
+            false                      // Configure chart to generate URLs?
+            );
+        try {
+          ChartUtilities.saveChartAsJPEG(new File("chart1.jpg"), chart, 500, 300);
+      } catch (IOException e) {
+          System.err.println("Problem occurred creating chart.");
+      }
     }
 
-    }
+  }
     
   // GETS THE IP ADDRESS OF YOUR PHONE'S NETWORK
   private static String getLocalIpAddress() {
