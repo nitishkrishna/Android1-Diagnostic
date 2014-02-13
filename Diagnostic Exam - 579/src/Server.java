@@ -1,4 +1,5 @@
 
+import java.awt.GridLayout;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -12,6 +13,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import javax.swing.ImageIcon;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtilities;
 import org.jfree.chart.JFreeChart;
@@ -19,16 +24,17 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 
-public class Server {
 
-  /**
-   * @param args
-   */
-//DEFAULT IP
+public class Server{
+
   public static String SERVERIP = "192.168.0.17";
   public static ArrayList<AccelDataObject> accelData = new ArrayList<Server.AccelDataObject>();
-  // DESIGNATE A PORT
   public static final int SERVERPORT = 5000;
+  public static boolean xMovDetect = false;
+  public static boolean yMovDetect = false;
+  public static boolean zMovDetect = false;
+  public static double totDist = 0;
+  public static boolean movementDetected = false;
   public static ArrayList<GPSDataObject> gpsData = new ArrayList<Server.GPSDataObject>();
   //private ServerSocket serverSocket;
   
@@ -44,8 +50,14 @@ public class Server {
           
           double time = accelData.get(i).getTimestamp();
           double x = accelData.get(i).getX();
+          if(Math.abs(x)>2) xMovDetect = true;
+          
           double y = accelData.get(i).getY();
+          if(Math.abs(y)>2) yMovDetect = true;
+          
           double z = accelData.get(i).getZ();
+          if(Math.abs(z)>2) zMovDetect = true;
+          
           series1.add(time-t, x);
           series2.add(time-t, y);
           series3.add(time-t, z);
@@ -70,24 +82,59 @@ public class Server {
       } catch (IOException e) {
           System.err.println("Problem occurred creating chart.");
       }
+        
     }
+    
+    if(gpsData!=null && gpsData.size()>2){
+      XYSeries gpsSeries = new XYSeries("Location Tracking");
+      int i=0;
+      for(i=0;i<gpsData.size();i++){
+        
+        double lat = gpsData.get(i).getLat();
+        double lng = gpsData.get(i).getLng();
+        gpsSeries.add(lat, lng);
+        
+      }
+      
+      XYSeriesCollection dataset2 = new XYSeriesCollection();
+      dataset2.addSeries(gpsSeries);
+      
+      JFreeChart chart = ChartFactory.createXYLineChart(
+          "Latitude vs. Longitude Plot",
+          "Latitude",
+          "Longitude",
+          dataset2,
+          PlotOrientation.VERTICAL,  
+          true,                      
+          true,                      
+          false                      
+          );
+      try {
+        ChartUtilities.saveChartAsPNG(new File("chart2.png"), chart, 800, 500);
+    } catch (IOException e) {
+        System.err.println("Problem occurred creating chart.");
+    }
+      }
 
   }
   
   private static double getTotalDistance(){
-    double totDist = 0;
+    double totDistance = 0;
     if (gpsData != null && gpsData.size() > 1){
       int i=0;
       for(i=0;i<(gpsData.size()-1);i++){
-        totDist+=getDistance(gpsData.get(i+1).getLat(), 
+        totDistance+=getDistance(gpsData.get(i+1).getLat(), 
             gpsData.get(i+1).getLng(), 
             gpsData.get(i).getLat(), 
             gpsData.get(i).getLng());
       }
-      return totDist;
+      return totDistance;
     }
-    else
+    else{
+      System.out.println("Not enough GPS entries");
       return 0;
+    }
+      
   }
      
   private static double getDistance( double LatNew, double LongNew, double LatOld, double LongOld ){
@@ -105,7 +152,11 @@ public class Server {
                 * Math.pow(Math.sin(deltaLong / 2.0), 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         distance = 6367 * c;
-
+        System.out.println("Actual distance : " + distance);
+        
+        if(distance*1000 < 3) distance = 0;
+        
+        System.out.println("Returning distance : " + distance);
         return distance;
 
     } catch(Exception e){
@@ -122,6 +173,7 @@ public class Server {
     System.out.println("Starting");
     List<String> dataLineSet; 
     AccelDataObject accel_data_item;
+    
       try {
               if (SERVERIP != null) {
                 System.out.println("Creating socket");
@@ -147,6 +199,7 @@ public class Server {
                           while ((line = in.readLine()) != null) {
                               System.out.println(line);
                               buf.append(line);
+                              buf.newLine();
                               dataLineSet = new ArrayList<String>(Arrays.asList(line.split("\\s* \\s*")));
                               
                               if(dataLineSet.get(0).equals("ACCELO:")){
@@ -175,12 +228,33 @@ public class Server {
                           }
 
                           buf.close();
-                          break;
                       } catch (Exception e) {
                           e.printStackTrace();
                       }
                       System.out.println("Closing client socket");
                       client.close();
+                      
+                      totDist = getTotalDistance()*1000;
+                      openChart();
+                      if(xMovDetect&&yMovDetect&&zMovDetect){
+                        if(totDist>2.5){
+                          movementDetected = true;
+                          System.out.println("Movement Detected");
+                          System.out.println("Total Distance moved is : " + totDist + " meters");
+                        }
+                        else {
+                          System.out.println("No Movement Detected");
+                        }
+                      }
+                      else
+                      {
+                        System.out.println("No Movement Detected");
+                      }
+                      
+                      Show s = new Server().new Show(movementDetected);
+                      s.setVisible(true);
+                      
+                      break;
                   }
                   System.out.println("Closing server socket object");
                   serverSocket.close();
@@ -192,10 +266,46 @@ public class Server {
               e.printStackTrace();
           }
       
-      openChart();
-      double totDist = getTotalDistance();
-      System.out.println("Total Distance moved is : " + totDist);
   }
+  
+ public class Show extends JFrame{
+   /**
+   * 
+   */
+  private static final long serialVersionUID = 1L;
+
+  public Show(final boolean movementDetected){
+     
+     if(movementDetected){
+       System.out.println("HERE TOO");
+       
+       setLayout(new GridLayout(1,2));
+       setSize(1900, 600);
+       setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+       ImageIcon image1 = new ImageIcon("chart1.png");
+       ImageIcon image2 = new ImageIcon("chart2.png");
+       add(new JLabel(image1));
+       add(new JLabel(image2));
+       setTitle("Movement Detected : " + totDist + " meters");
+       pack();
+       
+     }
+     else {
+       
+       setLayout(new GridLayout(1,1));
+       setSize(800, 600);
+       setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+       ImageIcon image1 = new ImageIcon("chart1.png");
+       add(new JLabel(image1));
+       setTitle("No Movement Detected!");
+       pack();
+       
+     }
+     
+   }
+ }
+
+ 
   
   public class AccelDataObject {
     private double timestamp;
